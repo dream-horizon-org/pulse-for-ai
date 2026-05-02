@@ -1,62 +1,64 @@
 # User Identification
 
-Attach a user identity to all telemetry for the current session.
+Attach user identity to all telemetry for the current session.
 
-## JS API
+```typescript
+import { PulseService } from './services/PulseService';
+
+// After login
+PulseService.setUser('usr-abc123', {
+  plan:     'premium',
+  region:   'us-west',
+  verified: true,
+});
+
+// After logout — always clear to prevent cross-user data leakage
+PulseService.clearUser();
+```
+
+## Direct Pulse API
 
 ```typescript
 import { Pulse } from '@dreamhorizonorg/pulse-react-native';
 
-// Set user ID after login
-Pulse.setUserId('user-abc123');
+Pulse.setUserId('usr-abc123');
+Pulse.setUserProperties({ plan: 'premium', region: 'us-west' });
 
-// Set user properties
-Pulse.setUserProperty('subscription', 'premium');
-Pulse.setUserProperties({
-    subscription: 'premium',
-    region: 'us-west',
-    verified: true,
-});
+// Set or remove a single property
+Pulse.setUserProperty('plan', 'enterprise');
+Pulse.setUserProperty('plan', null);  // remove
 
-// Clear on logout — important to avoid cross-user data leakage
+// Clear on logout
 Pulse.setUserId(null);
-Pulse.setUserProperty('subscription', null);
 ```
 
-## Common Login/Logout Pattern
+## Common Pattern
 
 ```typescript
 async function handleLogin(credentials) {
-    const user = await loginUser(credentials);
-    Pulse.setUserId(user.id);
-    Pulse.setUserProperties({
-        subscription: user.plan,
-        region: user.region,
-    });
+  const user = await loginUser(credentials);
+  PulseService.setUser(user.id, { plan: user.plan, region: user.region });
 }
 
 function handleLogout() {
-    Pulse.setUserId(null);
+  PulseService.clearUser();
 }
 ```
 
-**Note:** User ID and properties are scoped to the current app process. They persist until explicitly cleared or the process ends. Always clear on logout to prevent data leakage.
+User ID and properties persist until explicitly cleared or the app process ends.
 
 ## Native APIs
 
 **Kotlin (Android):**
 ```kotlin
-import com.pulsereactnativeotel.Pulse
-
-Pulse.setUserId("usr_12345")
-Pulse.setUserProperty("plan", "premium")
-Pulse.setUserId(null) // logout
+PulseSDK.INSTANCE.setUserId("usr_12345")
+PulseSDK.INSTANCE.setUserProperty("plan", "premium")
+PulseSDK.INSTANCE.setUserId(null)  // clear on logout
 ```
 
 **Swift (iOS):**
 ```swift
-import PulseReactNativeOtel
-
-PulseSDK.setUserId("usr_12345")
-PulseSDK.setUserId(nil) // logout
+Pulse.shared.setUserId("usr_12345")
+Pulse.shared.setUserProperty(name: "plan", value: AttributeValue.string("premium"))
+Pulse.shared.setUserId(nil)  // clear on logout
 ```

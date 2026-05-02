@@ -1,13 +1,27 @@
 # Expo Plugin Reference
 
-Full app.json configuration options for `@dreamhorizonorg/pulse-react-native`.
+Full `app.json` configuration for `@dreamhorizonorg/pulse-react-native`.
 
-## Top Level
+## Minimal Config
+
+```json
+[
+  "@dreamhorizonorg/pulse-react-native",
+  {
+    "apiKey": "YOUR_API_KEY",
+    "dataCollectionState": "ALLOWED"
+  }
+]
+```
+
+`apiKey` and `dataCollectionState` at root apply to both platforms. Override per-platform with `android` / `ios` blocks.
+
+## Root Options
 
 | Option | Required | Values | Description |
 |---|---|---|---|
 | `apiKey` | Yes | string | Project API key from Pulse dashboard |
-| `dataCollectionState` | Yes | `"ALLOWED"`, `"PENDING"`, `"DENIED"` | Initial data collection consent state |
+| `dataCollectionState` | Yes | `"ALLOWED"`, `"PENDING"`, `"DENIED"` | Initial data collection state |
 | `android` | No | object | Android-specific overrides |
 | `ios` | No | object | iOS-specific overrides |
 
@@ -18,12 +32,18 @@ Full app.json configuration options for `@dreamhorizonorg/pulse-react-native`.
 | `apiKey` | Override API key for Android only |
 | `dataCollectionState` | Override consent state for Android only |
 | `globalAttributes` | Key/value pairs attached to all Android telemetry |
-| `logLevel` | `"VERBOSE"`, `"DEBUG"`, `"INFO"`, `"WARN"`, `"ERROR"`, `"NONE"` — debugging only, remove before release |
-| `coreLibraryDesugaring` | `{ "enabled": boolean }` — required when minSdkVersion < 26 |
-| `okHttpInstrumentation` | `{ "enabled": boolean }` — native OkHttp spans for Image/FastImage network requests |
+| `coreLibraryDesugaring` | `{ "enabled": true }` — **required if minSdkVersion < 26** |
 
 **Android instrumentations** (each takes `{ "enabled": boolean }`):
-`crash`, `network`, `activity`, `fragment`, `anr`, `slowRendering`, `interaction`
+
+| Instrumentation | Default | Notes |
+|---|---|---|
+| `activity` | true | Activity lifecycle — powers AppStart span |
+| `fragment` | true | **Set false for RN apps** |
+| `crashReporter` | true | Native crash detection |
+| `anrReporter` | true | ANR detection |
+| `slowRendering` | true | Jank and frozen frame detection |
+| `interaction` | true | Touch/tap events |
 
 ## iOS Options
 
@@ -32,13 +52,21 @@ Full app.json configuration options for `@dreamhorizonorg/pulse-react-native`.
 | `apiKey` | Override API key for iOS only |
 | `dataCollectionState` | Override consent state for iOS only |
 | `globalAttributes` | Key/value pairs attached to all iOS telemetry |
-| `logLevel` | `"VERBOSE"`, `"DEBUG"`, `"INFO"`, `"WARN"`, `"ERROR"`, `"NONE"` — debugging only |
-| `configuration.includeScreenAttributes` | boolean — attach screen metadata to telemetry |
+| `configuration.includeScreenAttributes` | boolean — attach screen metadata |
 | `configuration.includeNetworkAttributes` | boolean — attach network metadata |
 | `configuration.includeGlobalAttributes` | boolean — attach global attributes |
 
 **iOS instrumentations** (each takes `{ "enabled": boolean }`):
-`crash`, `appLifecycle`, `screenLifecycle`, `appStartup`, `location`
+
+| Instrumentation | Default | Notes |
+|---|---|---|
+| `urlSession` | true | URLSession network monitoring |
+| `crash` | true | Native crash detection |
+| `screenLifecycle` | true | ViewController tracking |
+| `appStartup` | true | Cold start timing |
+| `appLifecycle` | true | Foreground/background transitions |
+| `interaction` | true | Touch/tap events |
+| `sessions` | true | Session boundary tracking |
 
 ## Full Example
 
@@ -49,27 +77,23 @@ Full app.json configuration options for `@dreamhorizonorg/pulse-react-native`.
       [
         "@dreamhorizonorg/pulse-react-native",
         {
-          "apiKey": "your-api-key",
-          "dataCollectionState": "PENDING",
+          "apiKey": "YOUR_API_KEY",
+          "dataCollectionState": "ALLOWED",
           "android": {
-            "globalAttributes": { "platform": "android" },
             "coreLibraryDesugaring": { "enabled": true },
-            "okHttpInstrumentation": { "enabled": true },
             "instrumentation": {
-              "crash": { "enabled": true },
-              "network": { "enabled": true },
-              "fragment": { "enabled": false },
-              "interaction": { "enabled": true }
+              "fragment":   { "enabled": false },
+              "activity":   { "enabled": true },
+              "crashReporter": { "enabled": true },
+              "anrReporter":   { "enabled": true },
+              "slowRendering": { "enabled": true }
             }
           },
           "ios": {
-            "globalAttributes": { "platform": "ios" },
-            "configuration": {
-              "includeScreenAttributes": true
-            },
             "instrumentation": {
-              "crash": { "enabled": true },
-              "screenLifecycle": { "enabled": false }
+              "screenLifecycle": { "enabled": true },
+              "urlSession":      { "enabled": true },
+              "crash":           { "enabled": true }
             }
           }
         }
@@ -84,11 +108,13 @@ Full app.json configuration options for `@dreamhorizonorg/pulse-react-native`.
 | State | Behavior |
 |---|---|
 | `ALLOWED` | Telemetry collected and exported immediately |
-| `PENDING` | SDK initialized — telemetry buffered in memory, nothing exported until state changes |
-| `DENIED` | Terminal — buffer cleared, SDK shuts down. Cannot be undone in the same process. |
+| `PENDING` | SDK initialized — data buffered in memory, nothing exported |
+| `DENIED` | Terminal — buffer cleared, SDK shuts down |
 
 **Valid transitions:**
 - `PENDING` → `ALLOWED`: flushes buffer, starts exporting
 - `PENDING` → `DENIED`: clears buffer, shuts down
 - `ALLOWED` → `DENIED`: clears buffer, shuts down
-- `DENIED` → anything: invalid — must restart app
+- `DENIED` → anything: invalid — requires app restart
+
+Re-run `npx expo prebuild --clean` after any plugin config change.

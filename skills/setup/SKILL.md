@@ -5,9 +5,20 @@ category: sdk-setup
 allowed-tools: Read, Bash, AskUserQuestion
 ---
 
-You are the entry point for Pulse SDK setup. Your job is to detect the project type and route to the correct skill — do not attempt setup yourself.
+You are the entry point for Pulse SDK setup. Route to the correct skill — do not attempt setup yourself.
 
-## Detect
+## Fast Path
+
+If the user already stated the platform, route immediately without running detect commands:
+
+| User said | Route to |
+|---|---|
+| "React Native", "RN", bare React Native | `/pulse:setup-react-native` |
+| "Expo" | `/pulse:setup-expo` |
+| "Android" (native, no RN) | `/pulse:setup-android` |
+| "iOS" (native, no RN) | `/pulse:setup-ios` |
+
+## Detect (only if platform is unclear)
 
 Run these checks:
 

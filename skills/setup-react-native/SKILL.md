@@ -1,6 +1,6 @@
 ---
 name: setup-react-native
-description: Full Pulse SDK setup for bare React Native apps (not Expo). Covers Android and iOS native initialization, JS layer, navigation tracking, error handling, and network monitoring. Use when asked to add Pulse to a React Native project without Expo.
+description: Full Pulse SDK setup for bare React Native apps (not Expo). Detects Android Application class, iOS AppDelegate, navigation library, and root component. Configures native init, creates a PulseService wrapper, and wires the JS layer. Use when asked to add Pulse to React Native without Expo.
 category: sdk-setup
 parent: setup
 allowed-tools: Read, Edit, Bash, AskUserQuestion
@@ -10,92 +10,155 @@ allowed-tools: Read, Edit, Bash, AskUserQuestion
 
 ## Invoke When
 
-- "Add Pulse to my React Native app"
-- "Set up Pulse SDK in React Native"
-- `react-native` is in package.json but `expo` is NOT
+- User asks to "add Pulse", "set up Pulse", or "integrate Pulse" in a React Native or Expo app
+- User wants error monitoring, crash reporting, tracing, profiling, session tracking, or logging in a React Native app
+- User wants to monitor native crashes, ANRs, or app hangs on iOS/Android
+- User mentions `@dreamhorizonorg/pulse-react-native`, mobile observability, or Pulse SDK
+- `react-native` is in `package.json` and `expo` is NOT
 
 ---
 
-## Phase 1: Detect
+## Step 0 — Already Installed?
 
 ```bash
-# Check install state
-cat package.json | grep -E '"@dreamhorizonorg/pulse-react-native"'
-
-# Determine app type
-grep -r "extends Application" android/app/src/main/java --include="*.kt" -l 2>/dev/null
-grep -r "extends Application" android/app/src/main/java --include="*.java" -l 2>/dev/null
-ls ios/*/AppDelegate.swift ios/*/AppDelegate.m 2>/dev/null
-
-# Check navigation
-cat package.json | grep "@react-navigation"
-
-# Check Android minSdk
-grep "minSdk" android/app/build.gradle 2>/dev/null
+cat package.json | grep '"@dreamhorizonorg/pulse-react-native"'
 ```
 
-| Question | Impact |
-|---|---|
-| Is `@dreamhorizonorg/pulse-react-native` already in package.json? | Skip install — go to Step 2 |
-| Is this a brownfield app (RN embedded in native)? | Application class and AppDelegate may be non-default — find the real files |
-| Is AppDelegate Swift or Objective-C? | Determines iOS init code |
-| Does `@react-navigation` exist in package.json? | Add `useNavigationTracking` in Step 5 |
-| Is Android minSdk < 26? | Add core library desugaring in Step 2 |
+If found → **stop**. Tell the user Pulse is already installed. Setup is complete — upgrade is a separate flow.
 
 ---
 
-## Phase 2: Guide
+## Step 1 — Detect Everything Upfront
 
-### Step 1 — Install
+Run all checks now. Record results — don't re-run these later.
+
+```bash
+# Android: find Application class from manifest
+grep -A5 '<application' android/app/src/main/AndroidManifest.xml 2>/dev/null | grep 'android:name'
+
+# iOS: find AppDelegate (all variants)
+find ios -maxdepth 3 \( -name "AppDelegate.swift" -o -name "AppDelegate.m" -o -name "AppDelegate.mm" \) 2>/dev/null
+
+# Find root component registered with AppRegistry
+grep -r "AppRegistry.registerComponent" --include="*.tsx" --include="*.ts" --include="*.jsx" --include="*.js" . 2>/dev/null | head -5
+
+# Navigation: find where NavigationContainer is rendered
+grep -rl "NavigationContainer" --include="*.tsx" --include="*.ts" --include="*.jsx" --include="*.js" . 2>/dev/null | grep -v node_modules | head -5
+
+# Navigation library
+cat package.json | grep -E '"@react-navigation/native"|"react-native-navigation"|"expo-router"'
+
+# Android minSdk
+grep "minSdkVersion\|minSdk " android/app/build.gradle 2>/dev/null
+
+# Wrapper placement
+ls -d src/services src/utils src/lib src 2>/dev/null | head -1
+```
+
+| What to determine | Impact |
+|---|---|
+| `android:name` in `<application>` | Identifies Application class file to edit. Default: `MainApplication` |
+| AppDelegate extension (`.swift` / `.m` / `.mm`) | Determines Swift vs Objective-C init code |
+| `AppRegistry.registerComponent(appName, () => X)` | X is the root component file — this is where `PulseService.start()` goes |
+| File containing `<NavigationContainer>` | This is where `useNavigationTracking` hook goes |
+| `@react-navigation/native` present | Add `useNavigationTracking` in wrapper |
+| `react-native-navigation` (Wix) present | Not supported — skip nav tracking, tell user |
+| `minSdkVersion < 26` | Add coreLibraryDesugaring |
+| User said Android-only / iOS-only? | Skip unused platform steps |
+
+---
+
+## Step 2 — Install
 
 ```bash
 yarn add @dreamhorizonorg/pulse-react-native
 ```
 
-Then link iOS native code:
+iOS — link native code:
 ```bash
 cd ios && pod install && cd ..
 ```
 
-### Step 2 — Android Native Init
+---
 
-Find the Application class. For standard apps it's `MainApplication.kt`. For brownfield apps:
+## Step 3 — Android Native Init
+
+> Skip if user confirmed iOS only.
+
+### 3a — Find the Application class file
+
+From the manifest `android:name` value, resolve the file:
+- `.MainApplication` or `com.example.MainApplication` → find `MainApplication.kt` or `MainApplication.java`
+- Custom class (e.g. `com.example.App`) → find that file
+
 ```bash
-grep -r "extends Application" android/app/src/main/java --include="*.kt" -l
-grep -r "extends Application" android/app/src/main/java --include="*.java" -l
+find android/app/src/main/java -name "MainApplication.kt" -o -name "MainApplication.java" 2>/dev/null
 ```
 
-Add to `onCreate()` **before** `super.onCreate()`:
+Read the file. Confirm it has `onCreate()`.
+
+### 3b — Inject Pulse init
+
+Create a private `initPulse()` function and call it from `onCreate()` before `super.onCreate()`. `Application.onCreate()` runs on the main thread — never dispatch Pulse init to a background thread.
+
+**Kotlin (`.kt`):**
 
 ```kotlin
 import com.pulsereactnativeotel.Pulse
-import com.pulsereactnativeotel.PulseDataCollectionConsent
+import com.pulse.android.api.otel.PulseDataCollectionConsent
 
 override fun onCreate() {
+    initPulse()
     super.onCreate()
+}
+
+private fun initPulse() {
     Pulse.initialize(
         application = this,
         apiKey = "YOUR_API_KEY",
-        dataCollectionState = PulseDataCollectionConsent.ALLOWED
+        dataCollectionState = PulseDataCollectionConsent.ALLOWED,
+        instrumentations = {
+            fragment { enabled(false) }   // disable for RN — JS navigation handles screens
+        }
     )
-    // ... rest of existing onCreate
 }
 ```
 
-**For greenfield RN apps** (new apps not embedding into existing native), disable fragment tracking to avoid duplicate screen events — activities already handle this:
+**Java (`.java`):**
 
-```kotlin
-Pulse.initialize(
-    application = this,
-    apiKey = "YOUR_API_KEY",
-    dataCollectionState = PulseDataCollectionConsent.ALLOWED
-) {
-    fragment { enabled(false) }
-    // activity{} stays enabled — it powers the AppStart span
+> Java requires all parameters to be passed explicitly — `Pulse.initialize` has no `@JvmOverloads`.
+
+```java
+import com.pulsereactnativeotel.Pulse;
+import com.pulse.android.api.otel.PulseDataCollectionConsent;
+import com.pulse.utils.PulseLogLevel;
+
+@Override
+public void onCreate() {
+    initPulse();
+    super.onCreate();
+}
+
+private void initPulse() {
+    // All params must be passed — no @JvmOverloads on Pulse.initialize
+    Pulse.initialize(
+        this,                                // application
+        "YOUR_API_KEY",                      // apiKey
+        PulseDataCollectionConsent.ALLOWED,  // dataCollectionState
+        null,                                // resource
+        null,                                // globalAttributes
+        null,                                // beforeSendData
+        PulseLogLevel.NONE,                  // logLevel
+        null                                 // instrumentations (fragment tracking on by default — acceptable for Java)
+    );
 }
 ```
 
-**If Android minSdk < 26**, add to `android/app/build.gradle`:
+> For Java projects, fragment tracking stays enabled. This is fine for brownfield apps. For greenfield RN Java apps, consider creating a Kotlin init file to use the `instrumentations` DSL.
+
+### 3c — coreLibraryDesugaring (if minSdkVersion < 26)
+
+Add to `android/app/build.gradle`:
 
 ```gradle
 android {
@@ -109,148 +172,240 @@ dependencies {
 }
 ```
 
-### Step 3 — iOS Native Init
+---
 
-**Swift AppDelegate** (`ios/*/AppDelegate.swift`):
+## Step 4 — iOS Native Init
+
+> Skip if user confirmed Android only.
+
+Read the AppDelegate file found in Step 1.
+
+**Swift (`AppDelegate.swift`):**
 
 ```swift
 import PulseReactNativeOtel
 
-@main
-class AppDelegate: RCTAppDelegate {
-    override func application(
-        _ application: UIApplication,
-        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
-    ) -> Bool {
-        PulseSDK.initialize(
-            apiKey: "YOUR_API_KEY",
-            dataCollectionState: .allowed
-        )
-        return super.application(application, didFinishLaunchingWithOptions: launchOptions)
-    }
-}
-```
-
-**Objective-C AppDelegate** (`ios/*/AppDelegate.m`):
-
-```objc
-#import <PulseReactNativeOtel-Swift.h>
-
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    [PulseSDK pulseInitialize:@"YOUR_API_KEY"
-        dataCollectionState:@"ALLOWED"
-           globalAttributes:nil
-              configuration:nil
-            instrumentations:nil];
-    return [super application:application didFinishLaunchingWithOptions:launchOptions];
-}
-```
-
-**For greenfield RN apps**, disable iOS screenLifecycle to avoid double-counting with JS navigation:
-
-```swift
+// Inside application(_:didFinishLaunchingWithOptions:), before the super call:
 PulseSDK.initialize(
     apiKey: "YOUR_API_KEY",
     dataCollectionState: .allowed,
     instrumentations: { config in
-        config.screenLifecycle { $0.enabled(false) }
+        config.screenLifecycle { $0.enabled(false) }  // disable for RN — JS navigation handles screens
     }
 )
+// return super.application(application, didFinishLaunchingWithOptions: launchOptions)
 ```
 
-**Critical:** Pulse init must run on the main thread before React Native starts. Never defer, dispatch, or move it to a background thread.
+**Objective-C (`AppDelegate.m` or `.mm`):**
 
-### Step 4 — JS Initialization
+```objc
+#import <PulseReactNativeOtel-Swift.h>
 
-Find the JS entry point. For standard apps it's `App.tsx`. For brownfield, locate `AppRegistry.registerComponent`:
-```bash
-grep -r "AppRegistry.registerComponent" --include="*.tsx" --include="*.ts" --include="*.js" -l .
+// Inside application:didFinishLaunchingWithOptions:, before [super application:...]:
+PulseObjcInstrumentations *inst = [PulseObjcInstrumentations new];
+inst.screenLifecycle = [PulseObjcEnabledConfig disabled];
+
+[PulseSDK pulseInitialize:@"YOUR_API_KEY"
+    dataCollectionState:@"ALLOWED"
+       globalAttributes:nil
+          configuration:nil
+        instrumentations:inst];
 ```
 
-Add before any components render:
+**Critical:** Pulse must init on the main thread before React Native starts. Never dispatch to a background thread or defer.
+
+---
+
+## Step 5 — Create PulseService Wrapper
+
+Detect placement from Step 1 results:
+- `src/services/` exists → `src/services/PulseService.ts`
+- `src/utils/` exists → `src/utils/PulseService.ts`
+- `src/lib/` exists → `src/lib/PulseService.ts`
+- `src/` exists → `src/PulseService.ts`
+- Otherwise → `PulseService.ts` (root)
+
+**With `@react-navigation/native`:**
 
 ```typescript
-import { Pulse } from '@dreamhorizonorg/pulse-react-native';
+import {
+  Pulse,
+  type PulseConfig,
+  type PulseAttributes,
+} from '@dreamhorizonorg/pulse-react-native';
+import type { NavigationContainerRef, ParamListBase } from '@react-navigation/native';
+import type React from 'react';
 
-Pulse.start();
+export const PulseService = {
+  /** Call at module level in your root component file, before any render */
+  start: (config?: PulseConfig) => Pulse.start(config),
+
+  /**
+   * Call inside the component that renders <NavigationContainer>.
+   * Tracks screen_load and screen_session events automatically.
+   * Returns onReady — pass it to <NavigationContainer onReady={onReady}>.
+   */
+  useNavigationTracking: (
+    navigationRef: React.RefObject<NavigationContainerRef<ParamListBase>>,
+  ) =>
+    Pulse.useNavigationTracking(navigationRef, {
+      screenSessionTracking: true,
+      screenNavigationTracking: true,
+      screenInteractiveTracking: false,
+    }),
+
+  setUser: (id: string, properties?: PulseAttributes) => {
+    Pulse.setUserId(id);
+    if (properties) Pulse.setUserProperties(properties);
+  },
+
+  clearUser: () => Pulse.setUserId(null),
+
+  trackEvent: (name: string, properties?: PulseAttributes) =>
+    Pulse.trackEvent(name, properties),
+
+  trackNonFatal: (error: unknown, context?: PulseAttributes) =>
+    Pulse.reportException(error, false, context),
+
+  shutdown: () => Pulse.shutdown(),
+};
 ```
 
-Optional — only set `logLevel` in development, remove before release:
+**Without navigation (no nav lib or Wix):**
 
 ```typescript
-import { Pulse, PulseLogLevel } from '@dreamhorizonorg/pulse-react-native';
+import {
+  Pulse,
+  type PulseConfig,
+  type PulseAttributes,
+} from '@dreamhorizonorg/pulse-react-native';
 
-Pulse.start({
-    autoDetectExceptions: true,   // default: true
-    autoDetectNetwork: true,      // default: true
-    autoDetectNavigation: true,   // default: true — kill switch only, does not add tracking
-    // logLevel: PulseLogLevel.DEBUG,  // dev debugging only — remove before release
-});
+export const PulseService = {
+  start: (config?: PulseConfig) => Pulse.start(config),
+
+  setUser: (id: string, properties?: PulseAttributes) => {
+    Pulse.setUserId(id);
+    if (properties) Pulse.setUserProperties(properties);
+  },
+
+  clearUser: () => Pulse.setUserId(null),
+
+  trackEvent: (name: string, properties?: PulseAttributes) =>
+    Pulse.trackEvent(name, properties),
+
+  trackNonFatal: (error: unknown, context?: PulseAttributes) =>
+    Pulse.reportException(error, false, context),
+
+  shutdown: () => Pulse.shutdown(),
+};
 ```
 
-### Step 5 — Navigation Tracking (if React Navigation is present)
+> **Wix Navigation (`react-native-navigation`):** screen tracking is not supported. All other Pulse features work. Use the wrapper above without `useNavigationTracking`.
 
-`autoDetectNavigation: true` is a kill switch — it does NOT automatically track screens. To get screen tracking, add `useNavigationTracking`:
+---
+
+## Step 6 — Wire Root Component
+
+From Step 1, find the component registered with `AppRegistry.registerComponent(appName, () => RootComponent)`.
+
+Open that component file (`App.tsx` or equivalent). Add `PulseService.start()` at module level — **before** the component function, so it runs before any render.
 
 ```typescript
-import { NavigationContainer, type NavigationContainerRef } from '@react-navigation/native';
-import { Pulse } from '@dreamhorizonorg/pulse-react-native';
+import { PulseService } from '<wrapper-path>/PulseService';  // adjust path
 
-function App() {
-    const navigationRef = React.useRef<NavigationContainerRef>(null);
-    const onReady = Pulse.useNavigationTracking(navigationRef, {
-        screenSessionTracking: true,      // default: on
-        screenNavigationTracking: true,   // default: on
-        screenInteractiveTracking: false, // default: off — enable if you call Pulse.markContentReady()
-    });
+PulseService.start();  // module level — runs once before any component renders
 
-    return (
-        <NavigationContainer ref={navigationRef} onReady={onReady}>
-            {/* your navigator */}
-        </NavigationContainer>
-    );
+export default function App() {
+  // your existing app code
 }
 ```
 
-### Step 6 — API Key
-
-Ask the user if the API key is not already in the codebase or environment:
-> "What is your Pulse API key? You can find it in the Pulse dashboard under Project Settings."
-
-Replace `YOUR_API_KEY` in both the Android Application class and iOS AppDelegate.
+Do NOT put this in `index.js` / `index.ts` (the AppRegistry entry file) — place it in the root component file.
 
 ---
 
-## Phase 3: Verify
+## Step 7 — Wire Navigation Tracking
 
-Add temporarily to the JS entry file to confirm initialization:
+> Skip if no `@react-navigation/native` was found in Step 1.
+
+From Step 1, open the file where `<NavigationContainer>` is rendered. Add the `useNavigationTracking` hook inside that component.
 
 ```typescript
-console.log('Pulse initialized:', Pulse.isInitialized());
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { PulseService } from '<wrapper-path>/PulseService';
+
+function RootNavigator() {
+  const navigationRef = React.useRef(null);
+  const onReady = PulseService.useNavigationTracking(navigationRef);
+
+  return (
+    <NavigationContainer ref={navigationRef} onReady={onReady}>
+      {/* existing navigator */}
+    </NavigationContainer>
+  );
+}
 ```
 
-Build and run on a device or simulator. Check the Pulse dashboard — session events should appear within a few minutes. Remove the log line after confirming.
+This enables automatic `screen_load` and `screen_session` tracking for every screen transition.
 
 ---
 
-## Troubleshooting
+## Step 8 — API Key
 
-| Issue | Solution |
-|---|---|
-| iOS: `PulseReactNativeOtel` not found after install | Run `cd ios && pod install` |
-| `Pulse.isInitialized()` returns false | Native init must run before `super.application(...)` on iOS / before `super.onCreate()` on Android |
-| Duplicate screen events in the dashboard | Disable `fragment{}` (Android) / `screenLifecycle` (iOS) in greenfield apps |
-| `Image` / `FastImage` network requests not tracked | These use OkHttp on Android — enable Android network instrumentation via the native SDK config |
-| Navigation not tracked despite `autoDetectNavigation: true` | That option is only a kill switch — add `useNavigationTracking` hook (Step 5) |
+Replace `YOUR_API_KEY` in:
+- Android: the Application class file (inside `initPulse()`)
+- iOS: AppDelegate
+
+If not yet available, ask:
+> "What is your Pulse API key? Find it in the Pulse dashboard under Project Settings."
 
 ---
 
-## Next Steps
+## Step 9 — Verify
 
-Ask the user if they want to set up any of the following:
+Build and run on device or simulator. Add temporarily to the root component:
 
-- Error boundaries and manual error reporting → `${SKILL_ROOT}/references/errors.md`
-- Custom events and spans → `${SKILL_ROOT}/references/custom-events.md`, `${SKILL_ROOT}/references/custom-spans.md`
-- Network monitoring details → `${SKILL_ROOT}/references/network.md`
-- Source maps for crash symbolication → `${SKILL_ROOT}/references/source-maps.md`
-- User identification → `${SKILL_ROOT}/references/user-identification.md`
+```typescript
+if (__DEV__) {
+  console.log('Pulse native initialized:', Pulse.isInitialized());
+}
+```
+
+`isInitialized()` reflects native SDK status — `true` confirms Android/iOS native init succeeded. Remove after confirming.
+
+---
+
+## ✅ Pulse is Now Active
+
+Tell the user what Pulse is now tracking automatically:
+
+- **JS crashes** and unhandled promise rejections
+- **HTTP requests** — fetch, XHR, axios (url, method, status, duration)
+- **App startup timing** — cold start duration
+- **Android:** activity lifecycle, ANR detection, slow/jank frames
+- **iOS:** ViewController transitions, URLSession
+- **Sessions** — session start/end, session duration
+- **Screen events** (if navigation was wired): `screen_load` on every navigation, `screen_session` — time spent on each screen
+
+`PulseService` at `<wrapper-path>` is the single entry point — use it instead of importing `Pulse` directly.
+
+---
+
+## What's Next?
+
+Confirm the API key is saved, then ask the user:
+
+> "Pulse is set up and tracking. What would you like to configure next?"
+> - Track business events (`trackEvent`) → `${SKILL_ROOT}/references/custom-events.md`
+> - Report handled errors and add error boundaries → `${SKILL_ROOT}/references/errors.md`
+> - Measure operation durations with spans → `${SKILL_ROOT}/references/custom-spans.md`
+> - Attach user identity (login/logout) → `${SKILL_ROOT}/references/user-identification.md`
+> - Screen interactive tracking (time-to-interactive) → `${SKILL_ROOT}/references/screen-tracking.md`
+> - Gate data collection behind consent (GDPR) → `${SKILL_ROOT}/references/data-collection-consent.md`
+> - Add global metadata (A/B tests, environment) → `${SKILL_ROOT}/references/global-attributes.md`
+> - Tune `Pulse.start()` options → `${SKILL_ROOT}/references/rn-start-config.md`
+> - Android native instrumentation config → `${SKILL_ROOT}/references/android-native-apis.md`
+> - iOS native instrumentation config → `${SKILL_ROOT}/references/ios-native-apis.md`
+> - Upload source maps for readable crash stacks → `${SKILL_ROOT}/references/source-maps.md`
+> - Shutdown / feature flag kill switch → `${SKILL_ROOT}/references/shutdown.md`
