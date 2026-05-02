@@ -1,0 +1,10 @@
+{
+  "name": "pulse",
+  "description": "Pulse SDK setup skills for Android, iOS, React Native, and Expo",
+  "version": "1.0.0",
+  "author": {
+    "name": "Dream Horizon",
+    "url": "https://pulse-ux.com"
+  },
+  "keywords": ["pulse", "sdk", "mobile", "observability", "android", "ios", "react-native", "expo"]
+}
