@@ -36,20 +36,12 @@ Pulse.start({
 });
 ```
 
-## Android: Image & FastImage
+## Android: Image & FastImage (OkHttp)
 
-`Image` and `FastImage` use OkHttp on Android — their requests are not intercepted by the JS layer. To monitor them, enable OkHttp instrumentation in the native Android config:
+Built-in `Image`, `FastImage`, and other native Android components use OkHttp — their requests bypass the JS layer and are **not** captured by `autoDetectNetwork`.
 
-```kotlin
-Pulse.initialize(
-    application = this,
-    apiKey = "YOUR_API_KEY",
-    dataCollectionState = PulseDataCollectionConsent.ALLOWED
-) {
-    network { enabled(true) }
-}
-```
+Monitoring OkHttp traffic requires the full Android OkHttp/ByteBuddy instrumentation guide (separate Gradle artifacts, not a JS config option). See the [Android network guide](https://pulse-ux.com/docs/developer-guide/sdk/android/instrumentation/network).
 
 ## iOS
 
-URLSession is tracked by default — no extra config needed.
+URLSession is instrumented by default — all `Image` and native network traffic is captured without extra config. See the [iOS network guide](https://pulse-ux.com/docs/developer-guide/sdk/ios/instrumentation/network) for URL filters and header capture.
