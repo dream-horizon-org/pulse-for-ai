@@ -32,18 +32,21 @@ Full `app.json` configuration for `@dreamhorizonorg/pulse-react-native`.
 | `apiKey` | Override API key for Android only |
 | `dataCollectionState` | Override consent state for Android only |
 | `globalAttributes` | Key/value pairs attached to all Android telemetry |
-| `coreLibraryDesugaring` | `{ "enabled": true }` — **required if minSdkVersion < 26** |
+| `logLevel` | Native log verbosity — debugging only, remove in production. `"VERBOSE"`, `"DEBUG"`, `"INFO"`, `"WARN"`, `"ERROR"`, `"NONE"` (default) |
+| `coreLibraryDesugaring` | `{ "enabled": true }` — **required if `minSdkVersion < 26`** |
+| `okHttpInstrumentation` | `{ "enabled": true }` — native OkHttp spans via ByteBuddy. **Required to capture `Image`, `FastImage`, and any native Android HTTP traffic** that bypasses the JS layer. Optionally add `"byteBuddyGradlePluginVersion"` to override the default (`1.17.8`). |
 
-**Android instrumentations** (each takes `{ "enabled": boolean }`):
+**Android `instrumentation`** (each takes `{ "enabled": boolean }`):
 
-| Instrumentation | Default | Notes |
-|---|---|---|
-| `activity` | true | Activity lifecycle — powers AppStart span |
-| `fragment` | true | **Set false for RN apps** |
-| `crashReporter` | true | Native crash detection |
-| `anrReporter` | true | ANR detection |
-| `slowRendering` | true | Jank and frozen frame detection |
-| `interaction` | true | Touch/tap events |
+| Key | Description |
+|---|---|
+| `crash` | Native crash detection |
+| `network` | Network monitoring |
+| `activity` | Activity lifecycle — powers AppStart span |
+| `fragment` | Fragment lifecycle — **set `false` for RN apps** to avoid double-counting screens |
+| `anr` | ANR detection |
+| `slowRendering` | Slow/jank frame detection |
+| `interaction` | Touch/tap events |
 
 ## iOS Options
 
@@ -52,21 +55,41 @@ Full `app.json` configuration for `@dreamhorizonorg/pulse-react-native`.
 | `apiKey` | Override API key for iOS only |
 | `dataCollectionState` | Override consent state for iOS only |
 | `globalAttributes` | Key/value pairs attached to all iOS telemetry |
-| `configuration.includeScreenAttributes` | boolean — attach screen metadata |
-| `configuration.includeNetworkAttributes` | boolean — attach network metadata |
-| `configuration.includeGlobalAttributes` | boolean — attach global attributes |
+| `logLevel` | Native log verbosity — debugging only, remove in production. `"VERBOSE"`, `"DEBUG"`, `"INFO"`, `"WARN"`, `"ERROR"`, `"NONE"` (default) |
 
-**iOS instrumentations** (each takes `{ "enabled": boolean }`):
+**iOS `configuration`** (booleans):
 
-| Instrumentation | Default | Notes |
-|---|---|---|
-| `urlSession` | true | URLSession network monitoring |
-| `crash` | true | Native crash detection |
-| `screenLifecycle` | true | ViewController tracking |
-| `appStartup` | true | Cold start timing |
-| `appLifecycle` | true | Foreground/background transitions |
-| `interaction` | true | Touch/tap events |
-| `sessions` | true | Session boundary tracking |
+| Key | Description |
+|---|---|
+| `includeScreenAttributes` | Attach screen metadata to telemetry |
+| `includeNetworkAttributes` | Attach network metadata |
+| `includeGlobalAttributes` | Attach global attributes |
+
+**iOS `instrumentation`** (each takes `{ "enabled": boolean }`):
+
+| Key | Description |
+|---|---|
+| `crash` | Native crash detection |
+| `appLifecycle` | Foreground/background transitions |
+| `screenLifecycle` | ViewController tracking |
+| `appStartup` | Cold start timing |
+| `location` | Location updates |
+
+> URLSession is instrumented automatically — no plugin toggle needed. For URL filters and header capture, use the [iOS network guide](https://pulse-ux.com/docs/developer-guide/sdk/ios/instrumentation/network).
+
+## OkHttp / Image / FastImage
+
+`Image`, `FastImage`, and other native Android components use OkHttp — their requests **bypass the JS layer** and are not captured by default.
+
+To capture them, enable `okHttpInstrumentation` in your plugin config:
+
+```json
+"android": {
+  "okHttpInstrumentation": { "enabled": true }
+}
+```
+
+This wires the Pulse OkHttp artifacts and the ByteBuddy Gradle plugin at prebuild time. Re-run `npx expo prebuild --clean` after enabling it.
 
 ## Full Example
 
@@ -81,19 +104,25 @@ Full `app.json` configuration for `@dreamhorizonorg/pulse-react-native`.
           "dataCollectionState": "ALLOWED",
           "android": {
             "coreLibraryDesugaring": { "enabled": true },
+            "okHttpInstrumentation": { "enabled": true },
             "instrumentation": {
-              "fragment":   { "enabled": false },
-              "activity":   { "enabled": true },
-              "crashReporter": { "enabled": true },
-              "anrReporter":   { "enabled": true },
-              "slowRendering": { "enabled": true }
+              "fragment":      { "enabled": false },
+              "crash":         { "enabled": true },
+              "network":       { "enabled": true },
+              "anr":           { "enabled": true },
+              "slowRendering": { "enabled": true },
+              "interaction":   { "enabled": true }
             }
           },
           "ios": {
+            "configuration": {
+              "includeScreenAttributes": true,
+              "includeNetworkAttributes": true
+            },
             "instrumentation": {
+              "crash":           { "enabled": true },
               "screenLifecycle": { "enabled": true },
-              "urlSession":      { "enabled": true },
-              "crash":           { "enabled": true }
+              "appStartup":      { "enabled": true }
             }
           }
         }

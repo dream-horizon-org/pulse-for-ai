@@ -55,6 +55,7 @@ ls app.config.js app.config.ts app.json 2>/dev/null | head -1
 | `@react-navigation/native` present | Standard Expo — use React Navigation wrapper |
 | Neither present | Simple app — `PulseService.start()` only, no nav tracking |
 | `minSdkVersion < 26` in android/ | Add `coreLibraryDesugaring` to plugin config |
+| App uses `Image`, `FastImage`, or native Android HTTP | Add `okHttpInstrumentation` to plugin config (Android only — iOS URLSession is auto) |
 | GDPR / consent required? | Use `"PENDING"` instead of `"ALLOWED"` |
 | `app.config.js` vs `app.json` | Edit the correct config file |
 
@@ -91,6 +92,35 @@ Read the existing `app.json` (or `app.config.js`). Add to the `plugins` array:
   "dataCollectionState": "ALLOWED",
   "android": {
     "coreLibraryDesugaring": { "enabled": true }
+  }
+}
+```
+
+**If app uses `Image`, `FastImage`, or any native Android HTTP client**, add `okHttpInstrumentation` to capture OkHttp traffic that bypasses the JS layer:
+```json
+{
+  "apiKey": "YOUR_API_KEY",
+  "dataCollectionState": "ALLOWED",
+  "android": {
+    "okHttpInstrumentation": { "enabled": true }
+  }
+}
+```
+
+**If Expo Router detected (Step 1)**, disable native screen lifecycle events to avoid duplicating what Expo Router already tracks. Keep `activity` enabled — it powers the AppStart span:
+```json
+{
+  "apiKey": "YOUR_API_KEY",
+  "dataCollectionState": "ALLOWED",
+  "android": {
+    "instrumentation": {
+      "fragment": { "enabled": false }
+    }
+  },
+  "ios": {
+    "instrumentation": {
+      "screenLifecycle": { "enabled": false }
+    }
   }
 }
 ```
@@ -313,9 +343,10 @@ Tell the user what Pulse is now tracking automatically:
 - **HTTP requests** — fetch, XHR, axios (url, method, status, duration)
 - **App startup timing** — cold start duration
 - **Android:** activity lifecycle, ANR detection, slow/jank frames
-- **iOS:** ViewController transitions, URLSession
+- **iOS:** URLSession (includes `Image` and `FastImage` traffic automatically)
 - **Sessions** — session start/end, session duration
 - **Screen events** (if navigation was wired): `screen_load` on every navigation, `screen_session` — time spent on each screen
+- **Android `Image`/`FastImage`** — only if `okHttpInstrumentation` was enabled in plugin config
 
 `PulseService` at `<wrapper-path>` is the single entry point — use it instead of importing `Pulse` directly.
 
