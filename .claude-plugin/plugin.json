@@ -6,5 +6,5 @@
     "name": "Dream Horizon",
     "url": "https://pulse-ux.com"
   },
-  "keywords": ["pulse", "sdk", "mobile", "observability", "android", "ios", "react-native", "expo"]
+  "keywords": ["pulse", "sdk", "mobile", "observability", "android", "ios", "react-native", "expo", "instrumentation", "crash-reporting", "error-tracking"]
 }
