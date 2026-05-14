@@ -1,6 +1,10 @@
 ---
-name: setup-expo
-description: Full Pulse SDK setup for Expo projects using the config plugin. Detects Expo Router vs standard navigation, configures app.json plugin, runs prebuild, creates a PulseService wrapper, and wires the JS layer. Use when asked to add Pulse to an Expo project.
+name: integrating-pulse-expo
+description: >-
+  Integrates Pulse (@dreamhorizonorg/pulse-react-native) into Expo using the config plugin — install, merge plugin JSON, prebuild,
+  PulseService wrapper, entry wiring for Expo Router or React Navigation, and verify builds. Use when adding or integrating Pulse in
+  Expo; for crashes, sessions, traces, profiling, logging, ANRs in Expo apps; when package.json lists expo or the user mentions
+  Pulse together with Expo, app.config, Expo Router, or eas.json.
 category: sdk-setup
 allowed-tools: Read, Edit, Bash, AskUserQuestion
 ---
@@ -12,6 +16,48 @@ allowed-tools: Read, Edit, Bash, AskUserQuestion
 - User wants to monitor native crashes, ANRs, or app hangs on iOS/Android in an Expo project
 - User mentions `@dreamhorizonorg/pulse-react-native`, mobile observability, or Pulse SDK with Expo
 - `expo` is in `package.json`
+
+---
+
+## ⚠️ Safety Rules — Read Before Touching Anything
+
+This skill runs against a real client codebase. **Every change must be minimal, additive, and reversible.** When in doubt, stop and ask the user.
+
+### Hard rules (never break)
+
+1. **Read every file before editing it.** No blind writes. No assumed file shapes.
+2. **Additive only.** Never overwrite or replace an existing file. Never reformat, reorder, or "clean up" surrounding code.
+3. **Stay inside the listed touch points.** Files this skill is allowed to modify:
+   - The active Expo config (`app.json`, `app.config.js`, or `app.config.ts`) — **only** the `plugins` array
+   - The entry point (`app/_layout.tsx` or `App.tsx`) — **only** to add the import + `PulseService.start()` (and `useNavigationTracking` if applicable)
+   - **New** file `src/config/pulse.ts` (or `pulse.ts` at root if no `src/`)
+   - `.env.example` — additive only
+4. **Never modify business logic.** No refactors, no renames, no architectural moves, no upgrades to RN/Expo/React/TypeScript versions, no Babel/Metro/EAS config changes.
+5. **Never install anything except `@dreamhorizonorg/pulse-react-native`.** Do not add `expo-router`, `@react-navigation/native`, or any other dependency.
+6. **Never write `.env`** — write `.env.example` only. Never commit, stage, or print real API keys.
+7. **Never convert config formats.** If the project uses `app.json`, keep it as `app.json`. If `app.config.ts`, stay there.
+8. **Never run destructive commands.** No `git reset`, `git clean`, `rm -rf`, `prebuild` without `--clean` not implied by the user. The only commands this skill runs are listed in Steps 2, 4, and 7.
+9. **Show the diff before writing.** For any edit, summarize "I'm about to add N lines to file X — here they are." Then write.
+10. **One step at a time.** Run each numbered step, report the result, then proceed. If a step fails, stop and report — do not retry the same broken command.
+
+### Allowed file matrix
+
+| File | Action |
+|---|---|
+| `app.json` / `app.config.js` / `app.config.ts` | Read → append one entry to `plugins` array. Never replace, never reorder existing entries. |
+| `app/_layout.tsx` or `App.tsx` | Read → add import + `PulseService.start()` at module level + (optional) `useNavigationTracking`. Never touch render tree beyond what is documented in Step 6. |
+| `src/config/pulse.ts` | Create new file (or `pulse.ts` at root). Never overwrite if it already exists — stop and ask. |
+| `.env.example` | Append `EXPO_PUBLIC_PULSE_API_KEY=...` if missing. Never overwrite an existing line. |
+| `.env` | **Never touch.** |
+| Anything else | **Forbidden.** |
+
+### When to stop and ask
+
+- The active config file already contains a `@dreamhorizonorg/pulse-react-native` plugin entry → ask before editing.
+- `src/config/pulse.ts` (or `pulse.ts`) already exists → ask before overwriting.
+- `app/_layout.tsx` already calls `Pulse.start()` or `PulseService.start()` → ask before adding.
+- The project uses an unfamiliar config setup (custom Metro, monorepo, EAS-only, no `package.json`) → ask before proceeding.
+- Any read returns content the skill does not recognize → ask, do not guess.
 
 ---
 
@@ -28,8 +74,12 @@ cat app.config.js 2>/dev/null | grep "pulse-react-native"
 cat app.config.ts 2>/dev/null | grep "pulse-react-native"
 ```
 
-- `expo` not in deps and no Expo config files → **stop**. Tell user: "This looks like bare React Native. Use `/pulse:setup-react-native` instead."
-- Package installed AND plugin already in config → **stop**. Tell user Pulse is already set up.
+- `expo` not in deps and no Expo config files → **stop**. Tell user: "This looks like bare React Native. Use `/integrating-pulse-react-native` instead."
+- Package installed AND plugin already in config → **do not re-run setup**. Instead, tell the user:
+  > "Pulse is already set up in this project. What would you like to add next? You can say a number or describe what you need:
+  > (1) GDPR / data consent, (2) Global attributes, (3) Handled error reporting, (4) Custom events, (5) User identification, (6) CodePush / OTA tracking, (7) Source maps"
+
+  When the user responds, read the relevant reference file from `${SKILL_ROOT}/references/` and implement the feature in their codebase. Don't re-run any setup steps.
 
 ---
 
@@ -81,7 +131,7 @@ npx expo install @dreamhorizonorg/pulse-react-native
 
 > The plugin handles all native init — no Kotlin/Swift edits needed. It injects Pulse into the Android Application class and iOS AppDelegate during prebuild.
 
-Read the active config file found in Step 1. Add to the `plugins` array:
+**Read the active config file found in Step 1 first.** Then add the following entry to the existing `plugins` array — do not replace the file or restructure it:
 
 ```json
 [
@@ -126,7 +176,7 @@ Read the active config file found in Step 1. Add to the `plugins` array:
 **API key — use env var, not a hardcoded string:**
 
 ```bash
-ls .env .env.example 2>/dev/null
+ls .env.example 2>/dev/null
 ls app.config.js app.config.ts 2>/dev/null
 ```
 
@@ -134,16 +184,15 @@ ls app.config.js app.config.ts 2>/dev/null
    ```
    EXPO_PUBLIC_PULSE_API_KEY=your_pulse_api_key_here
    ```
-2. If `.env` doesn't exist, create it with the same line.
-3. If config is `app.config.js` / `app.config.ts` → use the env var:
+2. If config is `app.config.js` / `app.config.ts` → use the env var:
    ```js
    apiKey: process.env.EXPO_PUBLIC_PULSE_API_KEY,
    ```
-4. If config is `app.json` only → use `"YOUR_API_KEY"` literal. Note: `app.json` doesn't support env vars. The user can rename it to `app.config.js` later.
+3. If config is `app.json` only → use `"YOUR_API_KEY"` literal placeholder. `app.json` does not support env vars — that is fine, leave it as a placeholder for the user to fill in.
 
 After setup, tell the user:
-> Set your real key in `.env`: `EXPO_PUBLIC_PULSE_API_KEY=pk_live_...`
-> Find it in the Pulse dashboard under **Project Settings**. Add `.env` to `.gitignore` — commit only `.env.example`.
+> Copy `.env.example` to `.env` and set your real key: `EXPO_PUBLIC_PULSE_API_KEY=pk_live_...`
+> Find it in the Pulse dashboard under **Project Settings**. Never commit `.env` — add it to `.gitignore`. Commit only `.env.example`.
 
 ---
 
@@ -354,7 +403,7 @@ If sessions don't appear → re-run `npx expo prebuild --clean` and rebuild.
 If any step fails during a real setup run, **edit this skill file before retrying** — don't retry the same broken step.
 
 1. Identify which step failed and what the error was
-2. Edit the relevant step in `skills/setup-expo/SKILL.md`
+2. Edit the relevant step in `skills/integrating-pulse-expo/SKILL.md`
 3. Continue from the corrected step
 
 | Failure | What to fix |
@@ -392,58 +441,58 @@ With the setup above, the following works with **no additional code**:
 
 ## What Would You Like to Add Next?
 
-Present these to the user and ask which they want to implement. When they pick one, read the reference file and make the changes in their codebase.
+Pulse is running — the setup above gives you crashes, sessions, and HTTP tracing with no extra code. Below are the most common follow-ups. When the user picks one, read the reference file and implement it in their codebase.
 
-**1. Control data collection consent**
-Right now `dataCollectionState` is `ALLOWED`. If you need GDPR compliance, set it to `PENDING` and call this after the user grants consent:
+**1. GDPR / data consent**
+Your current setup collects immediately. If you show a consent screen before tracking, initialize with `PENDING` — Pulse buffers all data locally and exports nothing until the user accepts. Declining shuts the SDK down for that session. Required for EU apps and App Store compliance in many regions.
 ```typescript
+// After user accepts (import PulseDataCollectionConsent from the SDK):
 PulseService.setDataCollectionState(PulseDataCollectionConsent.ALLOWED);
-// DENIED is terminal — SDK shuts down until next app start
+// DENIED is terminal — SDK stops until next app start
 ```
 Reference: `${SKILL_ROOT}/references/data-collection-consent.md`
 
-**2. Set global attributes**
-Attach metadata (app version, environment, release channel) to every signal Pulse captures — crashes, events, traces, sessions.
-```typescript
-PulseService.start({
-  globalAttributes: { env: 'production', version: '2.1.0', channel: 'stable' }
-});
+**2. Global attributes**
+Tag every crash, event, trace, and session with build metadata — so the Pulse dashboard lets you filter by `env`, `version`, or `release_channel`. Configured in the **plugin block of `app.json` / `app.config.*`** (compile-time) — not in JS code. Requires `npx expo prebuild --clean` after the change.
+```json
+"android": { "globalAttributes": { "env": "production", "release_channel": "stable" } },
+"ios":     { "globalAttributes": { "env": "production", "release_channel": "stable" } }
 ```
 Reference: `${SKILL_ROOT}/references/global-attributes.md`
 
 **3. Report handled errors**
-Catch errors from try/catch, API failures, and rejected promises — they show up in Pulse alongside crashes.
+Errors you catch (API failures, bad responses, try/catch) don't crash the app — but they matter. `trackNonFatal` sends them to Pulse alongside actual crashes so you see the full picture in one place.
 ```typescript
 PulseService.trackNonFatal(error, { screen: 'Checkout', action: 'submitOrder' });
 ```
 Reference: `${SKILL_ROOT}/references/errors.md`
 
 **4. Track business events**
-Purchases, funnel steps, button taps — correlate user behavior with performance data.
+Log what users did before a crash — purchases, funnel steps, feature usage. Pulse correlates events with the active session and span so you can reconstruct the exact user journey leading to an issue.
 ```typescript
 PulseService.trackEvent('purchase_completed', { product_id: 'abc', value: 9.99 });
 ```
 Reference: `${SKILL_ROOT}/references/custom-events.md`
 
 **5. Identify users**
-Attach a user ID to all telemetry — filter crashes, sessions, and traces by user.
+Attach a user ID to every crash, event, and session — so you can answer "who was affected?" and pull up a specific user's full session history in the dashboard.
 ```typescript
-PulseService.setUser(userId, { plan: 'pro' });  // on login
-PulseService.clearUser();                        // on logout
+PulseService.setUser(userId, { plan: 'pro' });  // after login
+PulseService.clearUser();                         // after logout
 ```
 Reference: `${SKILL_ROOT}/references/user-identification.md`
 
-**6. CodePush / OTA tracking**
-Add OTA update metadata (update ID, bundle version) as global attributes so you can correlate issues with specific releases.
+**6. CodePush / OTA update tracking**
+Without this, a crash from OTA update #42 looks identical to the embedded build in the dashboard. Tag the running bundle version as a global attribute so crashes map to the right source map and you can track regressions per OTA release.
 Reference: `${SKILL_ROOT}/references/global-attributes.md`
 
-**7. Upload source maps and symbol files**
-Make crash stack traces readable — JS source maps, Android ProGuard mappings, iOS dSYMs.
+**7. Source maps and symbol files**
+Minified stack traces show `index.bundle:1:12345` — useless for triage. Upload source maps once per release and Pulse resolves every frame to the original TypeScript line. Highest-impact improvement for crash debugging.
 Reference: `${SKILL_ROOT}/references/source-maps.md`
 
 ---
 
-Ask: **"Which of these would you like to add? (1–7, or describe what you need)"**
+**Which would you like to add? Say a number (1–7), describe what you need, or "skip".**
 
 ---
 
@@ -454,10 +503,9 @@ Ask: **"Which of these would you like to add? (1–7, or describe what you need)
 | Measure operation duration (API calls, rendering) | `${SKILL_ROOT}/references/custom-spans.md` |
 | Screen time-to-interactive per screen | `${SKILL_ROOT}/references/screen-tracking.md` |
 | React error boundary | `${SKILL_ROOT}/references/errors.md` |
+| `Pulse.start()` options (autoDetect flags, networkHeaders, logLevel) | `${SKILL_ROOT}/references/rn-start-config.md` |
 | Full plugin config options | `${SKILL_ROOT}/references/plugin-reference.md` |
 | Expo Router navigation deep-dive | `${SKILL_ROOT}/references/expo-router.md` |
-| Android native instrumentation APIs | `${SKILL_ROOT}/references/android-native-apis.md` |
-| iOS native instrumentation APIs | `${SKILL_ROOT}/references/ios-native-apis.md` |
 | Shutdown / kill switch | `${SKILL_ROOT}/references/shutdown.md` |
 | Debug logging | `${SKILL_ROOT}/references/log-level.md` |
 

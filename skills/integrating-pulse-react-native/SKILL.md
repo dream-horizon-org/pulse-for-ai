@@ -1,17 +1,37 @@
 ---
-name: setup-react-native
-description: Full Pulse SDK setup for bare React Native apps (not Expo). Detects Android Application class, iOS AppDelegate, navigation library, and root component. Configures native init, creates a PulseService wrapper, and wires the JS layer. Use when asked to add Pulse to React Native without Expo.
+name: integrating-pulse-react-native
+description: >-
+  Integrates Pulse (@dreamhorizonorg/pulse-react-native) into bare React Native (no Expo): native init from Application/AppDelegate,
+  PulseService wrapper, JS entry wiring — detects Kotlin/Java Application, Swift/ObjC AppDelegate, navigation library, and root
+  component before editing. Use when adding Pulse outside Expo; crashes, traces, profiling, logging, ANRs; package.json has
+  react-native but not expo; or user refuses Expo and uses native dirs directly.
 category: sdk-setup
 allowed-tools: Read, Edit, Bash, AskUserQuestion
 ---
 
 ## Invoke When
 
-- User asks to "add Pulse", "set up Pulse", or "integrate Pulse" in a React Native or Expo app
+- User asks to "add Pulse", "set up Pulse", or "integrate Pulse" in a **bare** React Native app (not Expo)
 - User wants error monitoring, crash reporting, tracing, profiling, session tracking, or logging in a React Native app
 - User wants to monitor native crashes, ANRs, or app hangs on iOS/Android
 - User mentions `@dreamhorizonorg/pulse-react-native`, mobile observability, or Pulse SDK
 - `react-native` is in `package.json` and `expo` is NOT
+
+---
+
+## ⚠️ Safety Rules — Read Before Touching Anything
+
+**Never overwrite or replace existing client files.** Every edit must be additive:
+
+| File | Allowed action |
+|---|---|
+| `MainApplication.kt` / `.java` | Read first → ADD `initPulse()` call inside existing `onCreate()`. Never replace. |
+| `AppDelegate.swift` / `.mm` | Read first → ADD init call inside existing `didFinishLaunchingWithOptions`. Never replace. |
+| `App.tsx` / root component | Read first → ADD import + `PulseService.start()`. Never replace. |
+| `android/app/build.gradle` | Read first → ADD to existing `android {}` and `dependencies {}` blocks. Never replace. |
+| Any existing file | Read → show the change → write only the added lines. |
+
+**Before any file edit:** read the file, confirm it exists and you understand its current content, then make the minimal surgical change.
 
 ---
 
@@ -26,8 +46,12 @@ ls app.json app.config.js app.config.ts eas.json 2>/dev/null
 cat package.json | grep '"@dreamhorizonorg/pulse-react-native"'
 ```
 
-- If `expo` found in deps, or Expo config files (`app.json`, `eas.json`, `app.config.js`) exist → **stop**. Tell the user: "This looks like an Expo project. Use `/pulse:setup-expo` instead."
-- If Pulse is already installed → **stop**. Tell the user Pulse is already installed. Setup is complete — upgrade is a separate flow.
+- If `expo` found in deps, or Expo config files (`app.json`, `eas.json`, `app.config.js`) exist → **stop**. Tell the user: "This looks like an Expo project. Use `/integrating-pulse-expo` instead."
+- If Pulse is already installed → **do not re-run setup**. Instead, tell the user:
+  > "Pulse is already set up in this project. What would you like to add next? You can say a number or describe what you need:
+  > (1) GDPR / data consent, (2) Global attributes, (3) Handled error reporting, (4) Custom events, (5) User identification, (6) CodePush / OTA tracking, (7) Source maps"
+
+  When the user responds, read the relevant reference file from `${SKILL_ROOT}/references/` and implement the feature in their codebase. Don't re-run any setup steps.
 
 ---
 
@@ -402,7 +426,7 @@ If any step fails or produces an unexpected result during a real setup run, **ed
 
 **How:**
 1. Identify which step failed and what the actual output/error was
-2. Edit the relevant step in this file (`skills/setup-react-native/SKILL.md`) to fix the instruction, command, or code snippet
+2. Edit the relevant step in this file (`skills/integrating-pulse-react-native/SKILL.md`) to fix the instruction, command, or code snippet
 3. Continue from the corrected step
 
 **Common cases to fix here:**
@@ -416,7 +440,7 @@ If any step fails or produces an unexpected result during a real setup run, **ed
 | Navigation wrapper file is in unexpected location | Update Step 7 note |
 | `isInitialized()` returns false for a known reason | Add to Step 9 troubleshooting |
 
-Edit this file at: `skills/setup-react-native/SKILL.md`
+Edit this file at: `skills/integrating-pulse-react-native/SKILL.md`
 
 ---
 
@@ -445,60 +469,57 @@ With the setup above, the following works with **no additional code**:
 
 ## What Would You Like to Add Next?
 
-Present these to the user and ask which they want to implement. When they pick one, read the reference file and make the changes in their codebase.
+Pulse is running — the setup above gives you crashes, sessions, and HTTP tracing with no extra code. Below are the most common follow-ups. When the user picks one, read the reference file and implement it in their codebase.
 
-**1. Control data collection consent**
-Right now `dataCollectionState` is `ALLOWED`. If you need GDPR compliance, set it to `PENDING` and call this after the user grants consent:
+**1. GDPR / data consent**
+Your current setup collects immediately. If you show a consent screen before tracking, initialize with `PENDING` — Pulse buffers all data locally and exports nothing until the user accepts. Declining shuts the SDK down for that session. Required for EU apps and App Store compliance in many regions.
 ```typescript
-PulseService.setDataCollectionState(PulseDataCollectionConsent.ALLOWED);
-// DENIED is terminal — SDK shuts down until next app start
+// After user accepts (import PulseDataCollectionConsent from the SDK):
+Pulse.setDataCollectionState(PulseDataCollectionConsent.ALLOWED);
+// DENIED is terminal — SDK stops until next app start
 ```
 Reference: `${SKILL_ROOT}/references/data-collection-consent.md`
 
-**2. Set global attributes**
-Attach metadata (app version, environment, build number) to every signal Pulse captures — crashes, events, traces, sessions.
+**2. Global attributes**
+Tag every crash, event, trace, and session with build metadata — so the Pulse dashboard lets you filter by `env`, `version`, or build number. Set once at startup, persists for the session.
 ```typescript
-PulseService.start({
-  globalAttributes: { env: 'production', version: '2.1.0' }
-});
+Pulse.start({ globalAttributes: { env: 'production', version: '2.1.0' } });
 ```
 Reference: `${SKILL_ROOT}/references/global-attributes.md`
 
 **3. Report handled errors**
-Catch errors from try/catch, API failures, and rejected promises — they show up in Pulse alongside crashes.
+Errors you catch (API failures, bad responses, try/catch) don't crash the app — but they matter. `trackNonFatal` sends them to Pulse alongside actual crashes so you see the full picture in one place.
 ```typescript
-PulseService.trackNonFatal(error, { screen: 'Checkout', action: 'submitOrder' });
+Pulse.trackNonFatal(error, { screen: 'Checkout', action: 'submitOrder' });
 ```
 Reference: `${SKILL_ROOT}/references/errors.md`
 
 **4. Track business events**
-Purchases, funnel steps, button taps — correlate user behavior with performance data.
+Log what users did before a crash — purchases, funnel steps, feature usage. Pulse correlates events with the active session and span so you can reconstruct the exact user journey leading to an issue.
 ```typescript
-PulseService.trackEvent('purchase_completed', { product_id: 'abc', value: 9.99 });
+Pulse.trackEvent('purchase_completed', { product_id: 'abc', value: 9.99 });
 ```
 Reference: `${SKILL_ROOT}/references/custom-events.md`
 
 **5. Identify users**
-Attach a user ID to all telemetry — filter crashes, sessions, and traces by user.
+Attach a user ID to every crash, event, and session — so you can answer "who was affected?" and pull up a specific user's full session history in the dashboard.
 ```typescript
-PulseService.setUser(userId, { plan: 'pro' });  // on login
-PulseService.clearUser();                        // on logout
+Pulse.setUser(userId, { plan: 'pro' });  // after login
+Pulse.clearUser();                        // after logout
 ```
 Reference: `${SKILL_ROOT}/references/user-identification.md`
 
-**6. CodePush / OTA tracking**
-Add OTA update metadata (update ID, bundle version) as global attributes so you can correlate issues with specific releases.
+**6. CodePush / OTA update tracking**
+Without this, a crash from OTA update #42 looks identical to the embedded build in the dashboard. Tag the running bundle version as a global attribute so crashes map to the right source map and you can track regressions per OTA release.
 Reference: `${SKILL_ROOT}/references/global-attributes.md`
 
-**7. Upload source maps and symbol files**
-Make crash stack traces readable — JS source maps, Android ProGuard mappings, iOS dSYMs.
+**7. Source maps and symbol files**
+Minified stack traces show `index.bundle:1:12345` — useless for triage. Upload source maps once per release and Pulse resolves every frame to the original TypeScript line. Highest-impact improvement for crash debugging.
 Reference: `${SKILL_ROOT}/references/source-maps.md`
 
 ---
 
-Ask: **"Which of these would you like to add? (1–7, or describe what you need)"**
-
-When the user picks one, read the reference file and implement it in their codebase.
+**Which would you like to add? Say a number (1–7), describe what you need, or "skip".**
 
 ---
 
