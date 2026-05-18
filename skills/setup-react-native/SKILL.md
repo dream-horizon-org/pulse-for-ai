@@ -8,6 +8,8 @@ allowed-tools: Read, Edit, Bash, AskUserQuestion
 
 ← [setup](../setup/SKILL.md)
 
+> **Editing rule:** Make minimal, surgical edits only. Do not reformat existing code, reorder imports, fix style issues, or touch any lines outside the specific insertion points. Every change must be Pulse-only. Preserve all surrounding code exactly as-is.
+
 ## Invoke When
 
 - User asks to "add Pulse", "set up Pulse", or "integrate Pulse" in a React Native or Expo app
@@ -24,7 +26,14 @@ allowed-tools: Read, Edit, Bash, AskUserQuestion
 cat package.json | grep '"@dreamhorizonorg/pulse-react-native"'
 ```
 
-If found → **stop**. Tell the user Pulse is already installed. Setup is complete — upgrade is a separate flow.
+If package found, also check whether init is already wired:
+
+```bash
+grep -r "Pulse\.start\|PulseService\.start" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" . 2>/dev/null | grep -v node_modules | head -3
+```
+
+- Package installed **and** `Pulse.start` already called → **stop**. Tell the user Pulse is already set up. Upgrade is a separate flow.
+- Package installed but no `Pulse.start` found → skip Steps 2–4 (native already configured), continue from Step 5.
 
 ---
 
@@ -48,36 +57,65 @@ grep -rl "NavigationContainer" --include="*.tsx" --include="*.ts" --include="*.j
 # Navigation library
 cat package.json | grep -E '"@react-navigation/native"|"react-native-navigation"|"expo-router"'
 
-# Android minSdk
-grep "minSdkVersion\|minSdk " android/app/build.gradle 2>/dev/null
+# Android minSdk + ProGuard + product flavors
+grep "minSdkVersion\|minSdk \|minifyEnabled\|productFlavors" android/app/build.gradle 2>/dev/null
 
 # Wrapper placement
 ls -d src/services src/utils src/lib src 2>/dev/null | head -1
+
+# TypeScript or JavaScript project?
+ls tsconfig.json 2>/dev/null
+
+# Monorepo?
+ls packages/ apps/ turbo.json nx.json pnpm-workspace.yaml 2>/dev/null | head -3
 ```
 
 | What to determine | Impact |
 |---|---|
 | `android:name` in `<application>` | Identifies Application class file to edit. Default: `MainApplication` |
 | AppDelegate extension (`.swift` / `.m` / `.mm`) | Determines Swift vs Objective-C init code |
-| `AppRegistry.registerComponent(appName, () => X)` | X is the root component file — this is where `PulseService.start()` goes |
-| File containing `<NavigationContainer>` | This is where `useNavigationTracking` hook goes |
+| `AppRegistry.registerComponent(appName, () => X)` | X is the root component file — this is where `PulseService.start()` goes. If multiple entries found, ask: "Which is your main app component?" |
+| File(s) containing `<NavigationContainer>` | This is where `useNavigationTracking` hook goes. If multiple files returned, ask: "Which file renders your root NavigationContainer?" |
 | `@react-navigation/native` present | Add `useNavigationTracking` in wrapper |
 | `react-native-navigation` (Wix) present | Not supported — skip nav tracking, tell user |
 | `minSdkVersion < 26` | Add coreLibraryDesugaring |
+| `tsconfig.json` present | Use `.ts`/`.tsx` for wrapper. Absent → use `.js`/`.jsx` |
+| New Architecture (RN 0.73+ — check `newArchEnabled=true` in `android/gradle.properties`) | SDK is Turbo Module compatible — no extra config needed |
+| Monorepo detected (`turbo.json`, `nx.json`, `packages/`, `apps/`) | Run install and all native commands from the app package directory, not the repo root |
+| `minifyEnabled true` in build.gradle | ProGuard/R8 enabled — SDK ships consumer rules that auto-apply. If release build crashes, see troubleshooting. |
+| `productFlavors` in build.gradle | Multiple build flavors — API key should be flavor-specific. See Step 8. |
 | User said Android-only / iOS-only? | Skip unused platform steps |
+| `react-native-web` present or user targeting web | `isSupportedPlatform()` returns `false` on web — SDK silently no-ops. No data in Pulse dashboard for the web target. Web apps should use `@dreamhorizon/pulse-web` instead. |
 
 ---
 
 ## Step 2 — Install
 
+Detect package manager from lock files:
+
 ```bash
-yarn add @dreamhorizonorg/pulse-react-native
+ls package-lock.json yarn.lock pnpm-lock.yaml bun.lockb bun.lock 2>/dev/null | head -1
 ```
+
+| Lock file | Install command |
+|---|---|
+| `yarn.lock` | `yarn add @dreamhorizonorg/pulse-react-native` |
+| `package-lock.json` | `npm install @dreamhorizonorg/pulse-react-native` |
+| `pnpm-lock.yaml` | `pnpm add @dreamhorizonorg/pulse-react-native` |
+| `bun.lockb` or `bun.lock` | `bun add @dreamhorizonorg/pulse-react-native` |
+| None found | `npm install @dreamhorizonorg/pulse-react-native` |
+
+Run the matching command.
 
 iOS — link native code:
 ```bash
 cd ios && pod install && cd ..
 ```
+
+> If `pod install` fails on Apple Silicon (M1/M2/M3), try:
+> ```bash
+> cd ios && arch -x86_64 pod install && cd ..
+> ```
 
 ---
 
@@ -99,17 +137,17 @@ Read the file. Confirm it has `onCreate()`.
 
 ### 3b — Inject Pulse init
 
-Create a private `initPulse()` function and call it from `onCreate()` before `super.onCreate()`. `Application.onCreate()` runs on the main thread — never dispatch Pulse init to a background thread.
+Create a private `initPulse()` function and call it from `onCreate()` **after** `super.onCreate()`. `Application.onCreate()` runs on the main thread — never dispatch Pulse init to a background thread.
 
 **Kotlin (`.kt`):**
 
 ```kotlin
 import com.pulsereactnativeotel.Pulse
-import com.pulse.android.api.otel.PulseDataCollectionConsent
+import com.pulsereactnativeotel.PulseDataCollectionConsent
 
 override fun onCreate() {
-    initPulse()
     super.onCreate()
+    initPulse()
 }
 
 private fun initPulse() {
@@ -135,8 +173,8 @@ import com.pulse.utils.PulseLogLevel;
 
 @Override
 public void onCreate() {
-    initPulse();
     super.onCreate();
+    initPulse();
 }
 
 private void initPulse() {
@@ -158,16 +196,27 @@ private void initPulse() {
 
 ### 3c — coreLibraryDesugaring (if minSdkVersion < 26)
 
-Add to `android/app/build.gradle`:
+Read `android/app/build.gradle` first. Then make surgical edits:
+
+- If a `compileOptions` block **already exists** inside `android {}` → add `coreLibraryDesugaringEnabled true` inside it. Do not create a second `compileOptions` block.
+- If no `compileOptions` block exists → add one inside the existing `android {}` block.
+- If `coreLibraryDesugaringEnabled` is already present → skip.
+- If a `dependencies` block **already exists** → add the `coreLibraryDesugaring` line inside it. Do not create a second `dependencies` block.
+- If no `dependencies` block exists → add one.
+
+Result should look like this (merged into existing structure, not appended as new blocks):
 
 ```gradle
 android {
+    // ...existing android config...
     compileOptions {
+        // ...existing compile options...
         coreLibraryDesugaringEnabled true
     }
 }
 
 dependencies {
+    // ...existing dependencies...
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
 }
 ```
@@ -218,12 +267,20 @@ inst.screenLifecycle = [PulseObjcEnabledConfig disabled];
 
 ## Step 5 — Create PulseService Wrapper
 
-Detect placement from Step 1 results:
-- `src/services/` exists → `src/services/PulseService.ts`
-- `src/utils/` exists → `src/utils/PulseService.ts`
-- `src/lib/` exists → `src/lib/PulseService.ts`
-- `src/` exists → `src/PulseService.ts`
-- Otherwise → `PulseService.ts` (root)
+Check if a wrapper already exists:
+
+```bash
+find . \( -name "PulseService.ts" -o -name "PulseService.js" \) 2>/dev/null | grep -v node_modules
+```
+
+If found → read it first. Extend it with any missing methods rather than overwriting it.
+
+If not found, detect placement from Step 1 results and use `.ts` or `.js` based on TypeScript detection:
+- `src/services/` exists → `src/services/PulseService.ts` (or `.js`)
+- `src/utils/` exists → `src/utils/PulseService.ts` (or `.js`)
+- `src/lib/` exists → `src/lib/PulseService.ts` (or `.js`)
+- `src/` exists → `src/PulseService.ts` (or `.js`)
+- Otherwise → `PulseService.ts` (or `.js`) at root
 
 **With `@react-navigation/native`:**
 
@@ -333,10 +390,11 @@ From Step 1, open the file where `<NavigationContainer>` is rendered. Add the `u
 ```typescript
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
+import type { NavigationContainerRef, ParamListBase } from '@react-navigation/native';
 import { PulseService } from '<wrapper-path>/PulseService';
 
 function RootNavigator() {
-  const navigationRef = React.useRef(null);
+  const navigationRef = React.useRef<NavigationContainerRef<ParamListBase>>(null);
   const onReady = PulseService.useNavigationTracking(navigationRef);
 
   return (
@@ -359,6 +417,34 @@ Replace `YOUR_API_KEY` in:
 
 If not yet available, ask:
 > "What is your Pulse API key? Find it in the Pulse dashboard under Project Settings."
+
+**Do not hardcode the key in source control.** Use environment injection:
+
+Option A — `react-native-config` (recommended):
+```bash
+# .env
+PULSE_API_KEY=your-key-here
+```
+```kotlin
+// MainApplication.kt
+import com.lugg.reactnativeconfig.BuildConfig
+apiKey = BuildConfig.PULSE_API_KEY
+```
+```swift
+// AppDelegate.swift
+apiKey: Bundle.main.object(forInfoDictionaryKey: "PULSE_API_KEY") as? String ?? ""
+```
+
+Option B — Android build flavors (if `productFlavors` detected in build.gradle):
+```kotlin
+// Per-flavor key in build.gradle
+productFlavors {
+    staging { buildConfigField "String", "PULSE_API_KEY", '"staging-key"' }
+    production { buildConfigField "String", "PULSE_API_KEY", '"prod-key"' }
+}
+// MainApplication.kt
+apiKey = BuildConfig.PULSE_API_KEY
+```
 
 ---
 
@@ -397,15 +483,31 @@ Tell the user what Pulse is now tracking automatically:
 Confirm the API key is saved, then ask the user:
 
 > "Pulse is set up and tracking. What would you like to configure next?"
-> - Track business events (`trackEvent`) → `${SKILL_ROOT}/references/custom-events.md`
-> - Report handled errors and add error boundaries → `${SKILL_ROOT}/references/errors.md`
-> - Measure operation durations with spans → `${SKILL_ROOT}/references/custom-spans.md`
-> - Attach user identity (login/logout) → `${SKILL_ROOT}/references/user-identification.md`
-> - Screen interactive tracking (time-to-interactive) → `${SKILL_ROOT}/references/screen-tracking.md`
-> - Gate data collection behind consent (GDPR) → `${SKILL_ROOT}/references/data-collection-consent.md`
-> - Add global metadata (A/B tests, environment) → `${SKILL_ROOT}/references/global-attributes.md`
-> - Tune `Pulse.start()` options → `${SKILL_ROOT}/references/rn-start-config.md`
-> - Android native instrumentation config → `${SKILL_ROOT}/references/android-native-apis.md`
-> - iOS native instrumentation config → `${SKILL_ROOT}/references/ios-native-apis.md`
-> - Upload source maps for readable crash stacks → `${SKILL_ROOT}/references/source-maps.md`
-> - Shutdown / feature flag kill switch → `${SKILL_ROOT}/references/shutdown.md`
+> - Track business events (`trackEvent`) → `./references/custom-events.md`
+> - Report handled errors and add error boundaries → `./references/errors.md`
+> - Measure operation durations with spans → `./references/custom-spans.md`
+> - Attach user identity (login/logout) → `./references/user-identification.md`
+> - Screen interactive tracking (time-to-interactive) → `./references/screen-tracking.md`
+> - Gate data collection behind consent (GDPR) → `./references/data-collection-consent.md`
+> - Add global metadata (A/B tests, environment) → `./references/global-attributes.md`
+> - Tune `Pulse.start()` options → `./references/rn-start-config.md`
+> - Android native instrumentation config → `./references/android-native-apis.md`
+> - iOS native instrumentation config → `./references/ios-native-apis.md`
+> - Upload source maps for readable crash stacks → `./references/source-maps.md`
+> - Shutdown / feature flag kill switch → `./references/shutdown.md`
+> - Network monitoring config (custom headers, OkHttp) → `./references/network.md`
+
+**Remind the user:** Source maps must be re-uploaded on every release build. Without this, crash stack traces will be unreadable in production.
+
+---
+
+## Troubleshooting
+
+| Issue | Fix |
+|---|---|
+| `isInitialized()` returns `false` | Confirm `Pulse.initialize()` is called after `super.onCreate()` on the main thread. Check logcat for init errors. |
+| Release build crashes immediately (Android) | R8/ProGuard stripping SDK classes. SDK ships consumer rules that should auto-apply. If still failing, add `-keep class com.pulsereactnativeotel.** { *; }` to `proguard-rules.pro`. |
+| iOS: module not found after install | Run `cd ios && pod install && cd ..`, then clean build. |
+| No screen events in dashboard | Confirm `useNavigationTracking` is called inside the component that renders `<NavigationContainer>` and `onReady` is passed to it. |
+| No network events | Confirm `autoDetectNetwork: true` (default). If using OkHttp/Image on Android, see `./references/network.md`. |
+| `react-native-navigation` (Wix) detected | Screen tracking not supported — all other features work. |

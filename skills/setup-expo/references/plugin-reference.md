@@ -33,6 +33,7 @@ Full `app.json` configuration for `@dreamhorizonorg/pulse-react-native`.
 | `dataCollectionState` | Override consent state for Android only |
 | `globalAttributes` | Key/value pairs attached to all Android telemetry |
 | `logLevel` | Native log verbosity — debugging only, remove in production. `"VERBOSE"`, `"DEBUG"`, `"INFO"`, `"WARN"`, `"ERROR"`, `"NONE"` (default) |
+| `kotlin19Compat` | `true` — required for **Expo SDK ≤ 52** (Kotlin 1.9.x). Avoids build errors on older Expo versions. |
 | `coreLibraryDesugaring` | `{ "enabled": true }` — **required if `minSdkVersion < 26`** |
 | `okHttpInstrumentation` | `{ "enabled": true }` — native OkHttp spans via ByteBuddy. **Required to capture `Image`, `FastImage`, and any native Android HTTP traffic** that bypasses the JS layer. Optionally add `"byteBuddyGradlePluginVersion"` to override the default (`1.17.8`). |
 
