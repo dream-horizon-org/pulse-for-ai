@@ -496,6 +496,9 @@ Confirm the API key is saved, then ask the user:
 > - Upload source maps for readable crash stacks → `./references/source-maps.md`
 > - Shutdown / feature flag kill switch → `./references/shutdown.md`
 > - Network monitoring config (custom headers, OkHttp) → `./references/network.md`
+> - Mask PII / sensitive content in session replay → `./references/session-replay.md`
+> - Navigation tracking options deep-dive → `./references/navigation.md`
+> - Debug logging verbosity → `./references/log-level.md`
 
 **Remind the user:** Source maps must be re-uploaded on every release build. Without this, crash stack traces will be unreadable in production.
 
