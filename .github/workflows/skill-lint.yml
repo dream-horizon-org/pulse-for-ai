@@ -1,0 +1,29 @@
+name: Skill Lint
+
+on:
+  pull_request:
+    paths:
+      - 'skills/**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run skill structural checks
+        run: bash scripts/lint-skills.sh
+
+      - name: Comment results on PR
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const results = fs.readFileSync('/tmp/skill-lint-results.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: results
+            });
