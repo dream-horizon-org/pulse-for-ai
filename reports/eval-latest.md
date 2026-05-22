@@ -1,11 +1,11 @@
 # Skill Eval Report
 
-Generated: 2026-05-22T10:31:03Z
+Generated: 2026-05-22T13:00:24Z
 
 | | Count |
 |---|---|
-| ✅ Pass | 57 |
-| ❌ Fail | 1 |
+| ✅ Pass | 58 |
+| ❌ Fail | 0 |
 
 ### Scenario 1: Expo Router + TypeScript
 - ✅ PulseService created
@@ -13,7 +13,7 @@ Generated: 2026-05-22T10:31:03Z
 - ✅ .pulse/ in .gitignore
 - ✅ No literal <wrapper-path> in PulseService
 - ✅ Pulse.start() present
-- ✅ registerWhenContainerReady configured (in /var/folders/jb/kbqzmmyd23q_m5d_fvhd8mfh0000gp/T/tmp.uAVkY7o6lh/expo-router-ts/PulseService.ts)
+- ✅ registerWhenContainerReady configured (in /var/folders/jb/kbqzmmyd23q_m5d_fvhd8mfh0000gp/T/tmp.hgcM3EGbIW/expo-router-ts/PulseService.ts)
 - ✅ Plugin added to app.json
 - ✅ Pulse.start() called exactly once (not duplicated)
 ### Scenario 2: Already installed — skill must detect and stop
@@ -21,7 +21,7 @@ Generated: 2026-05-22T10:31:03Z
 ### Scenario 3: Bare React Native
 - ✅ PulseService created
 - ✅ .pulse/learnings.md created
-- ❌ .pulse/ in .gitignore — pattern not found: .pulse/ in /var/folders/jb/kbqzmmyd23q_m5d_fvhd8mfh0000gp/T/tmp.uAVkY7o6lh/bare-rn-ts/.gitignore
+- ✅ .pulse/ in .gitignore
 - ✅ Pulse.initialize present in Application class
 - ✅ Pulse.initialize() called AFTER super.onCreate()
 - ✅ PulseSDK.initialize in AppDelegate
@@ -32,8 +32,8 @@ Generated: 2026-05-22T10:31:03Z
 - ✅ .pulse/learnings.md created
 - ✅ .pulse/ in .gitignore
 - ✅ Plugin added to app.json
-- ✅ onReady passed to NavigationContainer
-- ✅ NavigationContainer ref typed
+- ✅ onReady wired (in /var/folders/jb/kbqzmmyd23q_m5d_fvhd8mfh0000gp/T/tmp.hgcM3EGbIW/expo-nav-ts/App.tsx)
+- ✅ NavigationContainer ref present (in /var/folders/jb/kbqzmmyd23q_m5d_fvhd8mfh0000gp/T/tmp.hgcM3EGbIW/expo-nav-ts/App.tsx)
 ### Scenario 6: Expo + JavaScript (no TypeScript)
 - ✅ PulseService created
 - ✅ PulseService created as .js (correct for JS project)

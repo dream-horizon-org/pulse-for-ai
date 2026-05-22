@@ -433,6 +433,8 @@ export default RootLayout;
 
 **Standard Expo (`App.tsx`) with React Navigation:**
 
+If `App.tsx` already has a `<NavigationContainer>`, add `ref` and `onReady` to it. If there is no `NavigationContainer` yet, wrap the root view with one. Either way the result must be:
+
 ```tsx
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';

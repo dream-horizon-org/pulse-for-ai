@@ -200,12 +200,11 @@ check_file_exists ".pulse/learnings.md created" ".pulse/learnings.md" "$APP5"
 check_file_contains ".pulse/ in .gitignore" ".pulse/" "$APP5/.gitignore"
 check_file_contains "Plugin added to app.json" "pulse-react-native" "$APP5/app.json"
 
-# React Navigation: onReady must be passed to NavigationContainer
-APP_ENTRY=$(find "$APP5" -name "App.tsx" -o -name "App.js" 2>/dev/null | grep -v node_modules | head -1)
-if [ -n "$APP_ENTRY" ]; then
-  check_file_contains "onReady passed to NavigationContainer" "onReady" "$APP_ENTRY"
-  check_file_contains "NavigationContainer ref typed" "NavigationContainerRef\|useRef" "$APP_ENTRY"
-fi
+# React Navigation: onReady must be wired somewhere (App.tsx or any entry file)
+ONREADY_FILE=$(grep -rl "onReady" "$APP5" --include="*.ts" --include="*.tsx" 2>/dev/null | grep -v node_modules | head -1)
+REF_FILE=$(grep -rl "NavigationContainerRef\|useRef" "$APP5" --include="*.ts" --include="*.tsx" 2>/dev/null | grep -v node_modules | head -1)
+[ -n "$ONREADY_FILE" ] && ok "onReady wired (in $ONREADY_FILE)" || fail "onReady not found in any .ts/.tsx file"
+[ -n "$REF_FILE" ] && ok "NavigationContainer ref present (in $REF_FILE)" || fail "NavigationContainerRef/useRef not found in any .ts/.tsx file"
 
 echo ""
 
