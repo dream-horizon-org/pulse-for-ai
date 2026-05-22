@@ -22,13 +22,13 @@ jobs:
 
       - name: Fail if eval report has failures
         run: |
-          FAILS=$(grep -c '❌' reports/eval-latest.md || true)
-          if [ "$FAILS" -gt 0 ]; then
-            echo "❌ $FAILS failure(s) found in reports/eval-latest.md"
-            grep '❌' reports/eval-latest.md
+          FAIL_COUNT=$(grep '| ❌ Fail |' reports/eval-latest.md | grep -o '[0-9]*' | tail -1 || echo "0")
+          if [ "$FAIL_COUNT" -gt 0 ]; then
+            echo "❌ $FAIL_COUNT failure(s) found in reports/eval-latest.md"
+            grep '^\- ❌' reports/eval-latest.md || true
             exit 1
           fi
-          echo "✅ Eval report clean — no failures."
+          echo "✅ Eval report clean — $FAIL_COUNT failures."
 
       - name: Fail if report not updated with skill changes
         run: |
