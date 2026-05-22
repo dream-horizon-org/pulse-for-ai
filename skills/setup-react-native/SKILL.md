@@ -550,9 +550,9 @@ Confirm the API key is saved, then ask the user:
 
 Write `.pulse/learnings.md` with everything discovered about this project. Create or overwrite:
 
-Add `.pulse/` to `.gitignore` if not already present:
+Add `.pulse/` to the project root `.gitignore` if not already present. Run this from the project root:
 ```bash
-grep -q "\.pulse/" .gitignore 2>/dev/null || echo ".pulse/" >> .gitignore
+grep -q "\.pulse/" "$(pwd)/.gitignore" 2>/dev/null || echo ".pulse/" >> "$(pwd)/.gitignore"
 ```
 
 ```markdown

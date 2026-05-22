@@ -13,10 +13,20 @@ PASS=0
 FAIL=0
 OUTPUT=""
 
-cleanup() { rm -rf "$WORKDIR"; }
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Skill Eval — working dir: $WORKDIR"
+echo "Inspect apps there while eval runs."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+cleanup() {
+  echo ""
+  echo "Temp dir kept for inspection: $WORKDIR"
+  echo "Remove manually when done: rm -rf $WORKDIR"
+}
 trap cleanup EXIT
 
-log()  { echo "▶ $*"; OUTPUT+="### $*\n"; }
+log()  { echo ""; echo "▶ $*"; OUTPUT+="### $*\n"; }
 ok()   { echo "  ✅ $*"; OUTPUT+="- ✅ $*\n"; PASS=$((PASS+1)); }
 fail() { echo "  ❌ $*"; OUTPUT+="- ❌ $*\n"; FAIL=$((FAIL+1)); }
 
@@ -49,9 +59,10 @@ check_file_not_contains() {
 
 run_skill() {
   local app_dir="$1" skill="$2"
-  log "Running /pulse:$skill in $app_dir"
+  echo "  📁 App: $app_dir"
+  echo "  🤖 Running /pulse:$skill ..."
   cd "$app_dir"
-  claude -p "/pulse:$skill" \
+  claude -p "/pulse:$skill. Use YOUR_API_KEY as the Pulse API key placeholder — this is a test run." \
     --plugin-dir "$SKILL_REPO" \
     --allowedTools "Read,Edit,Write,Bash" \
     --dangerously-skip-permissions \
