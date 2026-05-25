@@ -1,0 +1,59 @@
+name: Skill Eval Check
+
+on:
+  pull_request:
+    paths:
+      - 'skills/**'
+
+jobs:
+  check-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fail if eval report missing
+        run: |
+          if [ ! -f reports/eval-latest.md ]; then
+            echo "❌ reports/eval-latest.md not found."
+            echo "Run: bash scripts/run-eval.sh"
+            echo "Then commit reports/eval-latest.md alongside your skill changes."
+            exit 1
+          fi
+
+      - name: Fail if eval report has failures
+        run: |
+          FAIL_COUNT=$(grep '| ❌ Fail |' reports/eval-latest.md | grep -o '[0-9]*' | tail -1 || echo "0")
+          if [ "$FAIL_COUNT" -gt 0 ]; then
+            echo "❌ $FAIL_COUNT failure(s) found in reports/eval-latest.md"
+            grep '^\- ❌' reports/eval-latest.md || true
+            exit 1
+          fi
+          echo "✅ Eval report clean — $FAIL_COUNT failures."
+
+      - name: Fail if report not updated with skill changes
+        run: |
+          git fetch origin ${{ github.base_ref }} --depth=1
+          SKILLS_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- skills/ | wc -l | tr -d ' ')
+          REPORT_CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- reports/eval-latest.md | wc -l | tr -d ' ')
+          if [ "$SKILLS_CHANGED" -gt 0 ] && [ "$REPORT_CHANGED" -eq 0 ]; then
+            echo "❌ Skills changed but reports/eval-latest.md was not updated."
+            echo "Run: bash scripts/run-eval.sh"
+            echo "Then commit reports/eval-latest.md."
+            exit 1
+          fi
+          echo "✅ Report updated alongside skill changes."
+
+      - name: Comment report on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (!fs.existsSync('reports/eval-latest.md')) return;
+            const report = fs.readFileSync('reports/eval-latest.md', 'utf8');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });

@@ -49,7 +49,7 @@ yarn pulse-cli upload react-native-ios \
 Set `codeBundleId` so Pulse can match crash reports to the correct source map:
 
 ```typescript
-import codePush from '@d11/dota';
+import codePush from 'react-native-code-push';
 import { Pulse } from '@dreamhorizonorg/pulse-react-native';
 
 const update = await codePush.getUpdateMetadata();

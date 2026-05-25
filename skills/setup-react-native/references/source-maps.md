@@ -84,7 +84,7 @@ yarn pulse-cli upload react-native-ios \
 Set `codeBundleId` in JS to link source maps to OTA bundles:
 
 ```typescript
-import codePush from '@d11/dota';
+import codePush from 'react-native-code-push';
 import { Pulse } from '@dreamhorizonorg/pulse-react-native';
 
 const update = await codePush.getUpdateMetadata();
