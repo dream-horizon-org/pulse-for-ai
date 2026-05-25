@@ -20,6 +20,47 @@ allowed-tools: Read, Edit, Bash, AskUserQuestion
 
 ---
 
+## ⚠️ Safety Rules — Read Before Touching Anything
+
+This skill runs against a real client codebase. **Every change must be minimal, additive, and reversible.** When in doubt, stop and ask the user.
+
+### Hard rules (never break)
+
+1. **Read every file before editing it.** No blind writes. No assumed file shapes.
+2. **Additive only.** Never overwrite or replace an existing file. Never reformat, reorder, or "clean up" surrounding code.
+3. **Stay inside the listed touch points.** Files this skill is allowed to modify:
+   - The active Expo config (`app.json`, `app.config.js`, or `app.config.ts`) — **only** the `plugins` array
+   - The entry point (`app/_layout.tsx` or `App.tsx`) — **only** to add the import + `PulseService.start()` (and `useNavigationTracking` if applicable)
+   - **New** file `src/config/pulse.ts` (or `pulse.ts` at root if no `src/`)
+   - `.env.example` — additive only
+4. **Never modify business logic.** No refactors, no renames, no architectural moves.
+5. **Never install anything except `@dreamhorizonorg/pulse-react-native`.**
+6. **Never write `.env`** — write `.env.example` only. Never commit, stage, or print real API keys.
+7. **Never convert config formats.** If the project uses `app.json`, keep it as `app.json`.
+8. **Never run destructive commands.** No `git reset`, `git clean`, `rm -rf`.
+9. **Show the diff before writing.** For any edit, summarize "I'm about to add N lines to file X." Then write.
+10. **One step at a time.** Run each numbered step, report the result, then proceed.
+
+### Allowed file matrix
+
+| File | Allowed action |
+|---|---|
+| `MainApplication.kt` / `.java` | Read first → ADD `initPulse()` call inside existing `onCreate()`. Never replace. |
+| `AppDelegate.swift` / `.mm` | Read first → ADD init call inside existing `didFinishLaunchingWithOptions`. Never replace. |
+| `App.tsx` / root component | Read first → ADD import + `PulseService.start()`. Never replace. |
+| `android/app/build.gradle` | Read first → ADD to existing `android {}` and `dependencies {}` blocks. Never replace. |
+| `src/config/pulse.ts` | Create new file only. Never overwrite if exists — stop and ask. |
+| Any existing file | Read → show the change → write only the added lines. |
+
+### When to stop and ask
+
+- Config already contains `@dreamhorizonorg/pulse-react-native` plugin entry → ask before editing.
+- `src/config/pulse.ts` or `pulse.ts` already exists → ask before overwriting.
+- Entry point already calls `Pulse.start()` or `PulseService.start()` → ask before adding.
+- Unfamiliar config setup → ask before proceeding.
+
+---
+
 ## Step 0 — Load Project Memory
 
 Check if this project has been seen before:
@@ -44,7 +85,13 @@ If package found, also check whether init is already wired:
 grep -r "Pulse\.start\|PulseService\.start" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" . 2>/dev/null | grep -v node_modules | head -3
 ```
 
-- Package installed **and** `Pulse.start` already called → **stop**. Tell the user Pulse is already set up. If they want to upgrade:
+- Package installed AND `Pulse.start` already called → **do not re-run setup**. Instead tell the user:
+  > "Pulse is already set up in this project. What would you like to add next?
+  > (1) GDPR / data consent, (2) Global attributes, (3) Handled error reporting, (4) Custom events, (5) User identification, (6) CodePush / OTA tracking, (7) Source maps"
+  
+  When the user responds, read the relevant reference file from `./references/` and implement the feature in their codebase. Don't re-run setup steps.
+
+  If they want to upgrade instead:
   1. Check current vs latest: `npm show @dreamhorizonorg/pulse-react-native version` vs version in `package.json`
   2. Already on latest → tell user "You're already on the latest version. No action needed."
   3. Upgrade available → bump version, then:
@@ -323,6 +370,7 @@ If not found, detect placement from Step 1 results and use `.ts` or `.js` based 
 ```typescript
 import {
   Pulse,
+  PulseDataCollectionConsent,
   type PulseConfig,
   type PulseAttributes,
 } from '@dreamhorizonorg/pulse-react-native';
@@ -360,6 +408,9 @@ export const PulseService = {
   trackNonFatal: (error: unknown, context?: PulseAttributes) =>
     Pulse.reportException(error, false, context),
 
+  setDataCollectionState: (state: PulseDataCollectionConsent) =>
+    Pulse.setDataCollectionState(state),
+
   shutdown: () => Pulse.shutdown(),
 };
 ```
@@ -369,6 +420,7 @@ export const PulseService = {
 ```typescript
 import {
   Pulse,
+  PulseDataCollectionConsent,
   type PulseConfig,
   type PulseAttributes,
 } from '@dreamhorizonorg/pulse-react-native';
@@ -388,6 +440,9 @@ export const PulseService = {
 
   trackNonFatal: (error: unknown, context?: PulseAttributes) =>
     Pulse.reportException(error, false, context),
+
+  setDataCollectionState: (state: PulseDataCollectionConsent) =>
+    Pulse.setDataCollectionState(state),
 
   shutdown: () => Pulse.shutdown(),
 };
@@ -571,6 +626,45 @@ grep -q "\.pulse/" "$(pwd)/.gitignore" 2>/dev/null || echo ".pulse/" >> "$(pwd)/
 ```
 
 Fill in only what was discovered. Omit unknown fields. This file lets the next agent run skip re-detection and avoid repeating mistakes.
+
+---
+
+## What Would You Like to Add Next?
+
+Pulse is running. The setup above gives you crashes, sessions, and HTTP tracing with no extra code. Common follow-ups:
+
+**1. GDPR / data consent** — initialize with `PENDING`, export nothing until user accepts. Required for EU apps.
+Reference: `./references/data-collection-consent.md`
+
+**2. Global attributes** — tag every crash and session with `env`, `version`, build metadata.
+Reference: `./references/global-attributes.md`
+
+**3. Report handled errors** — send caught exceptions to Pulse alongside crashes.
+```typescript
+PulseService.trackNonFatal(error, { screen: 'Checkout' });
+```
+Reference: `./references/errors.md`
+
+**4. Track business events** — log purchases, funnel steps, feature usage.
+```typescript
+PulseService.trackEvent('purchase_completed', { value: 9.99 });
+```
+Reference: `./references/custom-events.md`
+
+**5. Identify users** — attach user ID to every crash and session.
+```typescript
+PulseService.setUser(userId, { plan: 'pro' });
+PulseService.clearUser(); // on logout
+```
+Reference: `./references/user-identification.md`
+
+**6. CodePush / OTA tracking** — tag bundle version so crashes map to the right source map.
+Reference: `./references/global-attributes.md`
+
+**7. Source maps** — resolve minified stack traces to original TypeScript lines.
+Reference: `./references/source-maps.md`
+
+When the user picks one, read the reference file and implement it in their codebase.
 
 ---
 

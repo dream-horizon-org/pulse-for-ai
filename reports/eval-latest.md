@@ -1,6 +1,6 @@
 # Skill Eval Report
 
-Generated: 2026-05-22T13:00:24Z
+Generated: 2026-05-25T18:51:31Z
 
 | | Count |
 |---|---|
@@ -13,7 +13,7 @@ Generated: 2026-05-22T13:00:24Z
 - ✅ .pulse/ in .gitignore
 - ✅ No literal <wrapper-path> in PulseService
 - ✅ Pulse.start() present
-- ✅ registerWhenContainerReady configured (in /var/folders/jb/kbqzmmyd23q_m5d_fvhd8mfh0000gp/T/tmp.hgcM3EGbIW/expo-router-ts/PulseService.ts)
+- ✅ registerWhenContainerReady configured (in /var/folders/jb/kbqzmmyd23q_m5d_fvhd8mfh0000gp/T/tmp.jbBoitOH75/expo-router-ts/PulseService.ts)
 - ✅ Plugin added to app.json
 - ✅ Pulse.start() called exactly once (not duplicated)
 ### Scenario 2: Already installed — skill must detect and stop
@@ -32,8 +32,8 @@ Generated: 2026-05-22T13:00:24Z
 - ✅ .pulse/learnings.md created
 - ✅ .pulse/ in .gitignore
 - ✅ Plugin added to app.json
-- ✅ onReady wired (in /var/folders/jb/kbqzmmyd23q_m5d_fvhd8mfh0000gp/T/tmp.hgcM3EGbIW/expo-nav-ts/App.tsx)
-- ✅ NavigationContainer ref present (in /var/folders/jb/kbqzmmyd23q_m5d_fvhd8mfh0000gp/T/tmp.hgcM3EGbIW/expo-nav-ts/App.tsx)
+- ✅ onReady wired (in /var/folders/jb/kbqzmmyd23q_m5d_fvhd8mfh0000gp/T/tmp.jbBoitOH75/expo-nav-ts/App.tsx)
+- ✅ NavigationContainer ref present (in /var/folders/jb/kbqzmmyd23q_m5d_fvhd8mfh0000gp/T/tmp.jbBoitOH75/expo-nav-ts/App.tsx)
 ### Scenario 6: Expo + JavaScript (no TypeScript)
 - ✅ PulseService created
 - ✅ PulseService created as .js (correct for JS project)
